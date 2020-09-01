@@ -187,6 +187,12 @@ Tensor norm_backward(Tensor grad, const Tensor & self, const optional<Scalar> & 
   return norm_backward(grad, self, p_, norm);
 }
 
+Tensor sgn_backward(Tensor result, Tensor grad, Tensor self) {
+  // [grad / abs(z) - Re(grad/self) * result
+  auto abs = at::abs(self);
+  return at::where(abs == 0.0, at::zeros({}, grad.options()), (grad/abs - (at::real(grad/self) * result)));
+}
+
 Tensor pow_backward(Tensor grad, const Tensor & self, const Scalar & exponent_) {
   double exponent = exponent_.toDouble();
   if (exponent == 0.0) {
