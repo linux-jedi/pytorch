@@ -1053,7 +1053,27 @@ class Quantizer:
         return quantized
 
     def _find_matches(self, graph, modules, patterns):
-        match_map = {}  # node name -> (root_node, match_value?)
+        """
+        Inputs:
+          - graph: an fx.Graph object
+          - modules: a mapping of fully qualified module name to instance,
+              for example, {'foo': ModuleFoo, ...}
+          - patterns: a mapping from a tuple of nodes in reverse order to
+              uninitialized QuantizeHandler subclass.
+
+        Matches the nodes in the input graph to quantization patterns, and
+        outputs the information needed to quantize them in future steps.
+
+        Outputs a map of
+          node_name ->
+            (node, matched_values, QuantizeHandler instance, qconfig)
+
+        For example, {
+          'relu_1': (relu_1, [relu_1], <CopyNode instance>, QConfig(...)),
+          ...
+        }
+        """
+        match_map = {}
         all_matched = set()
 
         def record_match(pattern, node, matched):
@@ -1077,9 +1097,21 @@ class Quantizer:
                             all_matched.add(n.name)
                         # break after finding the first match
                         break
+        print(match_map)
         return match_map
 
     def _find_quants(self, graph, matches):
+        """
+        Inputs:
+          - graph: an fx.Graph object
+          - matches: output of self._find_matches function
+
+        Takes the nodes in the input graph and pending matches, and finds and
+        returns the input and output nodes which need to be quantized.
+
+        Outputs a map of
+          node_name -> (QuantizeHandler instance (always DefaultQuant), qconfig)
+        """
         quants = {}
 
         def visit(node, qconfig):
