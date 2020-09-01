@@ -11953,6 +11953,76 @@ class TestNNDeviceType(NNTestCase):
         F.threshold(x, 0.5, 0.5, inplace=True)
         F.threshold_(x, 0.5, 0.5)
 
+    def test_triplet_margin_loss_with_distance_default_parity(self, device):
+        # Test for `nn.TripletMarginLossWithDistance` and
+        # `F.triplet_margin_loss_with_distance`.  Checks
+        # for parity against the respective non-distance-agnostic
+        # implementations of triplet margin loss (``nn.TripletMarginLoss`
+        # and `F.triplet_margin_loss`) under *default args*.
+
+        anchor = torch.randn(5, 10, device=device, requires_grad=True)
+        positive = torch.randn(5, 10, device=device, requires_grad=True)
+        negative = torch.randn(5, 10, device=device, requires_grad=True)
+
+        # functional grad and parity check
+        self.assertTrue(gradcheck(lambda a, p, n: F.triplet_margin_loss_with_distance(
+            a, p, n), (anchor, positive, negative)))
+        self.assertEqual(F.triplet_margin_loss_with_distance(anchor, positive, negative),
+                         F.triplet_margin_loss(anchor, positive, negative))
+
+        # module grad and parity check
+        loss_base = nn.TripletMarginLoss()
+        loss_test = nn.TripletMarginLossWithDistance()
+        self.assertTrue(gradcheck(lambda a, p, n: loss_test(
+            a, p, n), (anchor, positive, negative)))
+        self.assertEqual(loss_test(anchor, positive, negative),
+                         loss_base(anchor, positive, negative))
+
+    def test_triplet_margin_loss_with_distance(self, device):
+        # Test for `nn.TripletMarginLossWithDistance` and
+        # `F.triplet_margin_loss_with_distance`.  Checks
+        # for parity against the respective non-distance-agnostic
+        # implementations of triplet margin loss (`nn.TripletMarginLoss`
+        # and `F.triplet_margin_loss`).
+
+        def pairwise_similarity(x, y):
+            return 1.0 - F.pairwise_distance(x, y)
+        pairwise_distance = nn.PairwiseDistance()
+        distance_functions = ((pairwise_similarity, True), (pairwise_distance, False))
+
+        reductions = ('mean', 'none')
+        margins = (1.0, 1.5)
+        swaps = (True, False)
+
+        for (distance_fn, is_similarity_fn), reduction, margin, swap \
+                in itertools.product(distance_functions, reductions, margins, swaps):
+            anchor = torch.randn(5, 10, device=device, requires_grad=True)
+            positive = torch.randn(5, 10, device=device, requires_grad=True)
+            negative = torch.randn(5, 10, device=device, requires_grad=True)
+
+            # functional: standard gradient check
+            self.assertTrue(gradcheck(lambda a, p, n: F.triplet_margin_loss_with_distance(
+                a, p, n, distance_function=distance_fn), (anchor, positive, negative)))
+            # functional: parity check
+            self.assertEqual(F.triplet_margin_loss_with_distance(anchor, positive, negative,
+                                                                 distance_function=distance_fn,
+                                                                 is_similarity_function=is_similarity_fn,
+                                                                 reduction=reduction, margin=margin, swap=swap),
+                             F.triplet_margin_loss(anchor, positive, negative,
+                                                   reduction=reduction, margin=margin, swap=swap))
+
+            loss_base = nn.TripletMarginLoss(reduction=reduction, margin=margin, swap=swap)
+            loss_test = nn.TripletMarginLossWithDistance(distance_function=distance_fn,
+                                                         is_similarity_function=is_similarity_fn,
+                                                         reduction=reduction, margin=margin, swap=swap)
+            # module: standard gradient check
+            self.assertTrue(gradcheck(lambda a, p, n: loss_test(
+                a, p, n), (anchor, positive, negative)))
+            # module: parity check
+            self.assertEqual(loss_test(anchor, positive, negative),
+                             loss_base(anchor, positive, negative))
+
+
 class TestModuleGlobalHooks(TestCase):
 
     def tearDown(self):
